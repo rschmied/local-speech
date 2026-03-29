@@ -173,6 +173,23 @@ ls api/src/models/v1_0/
 
 Before making it a service, confirm it starts and uses the GPU:
 
+First ensure the project-local virtual environment exists for this clone path:
+
+```bash
+cd Kokoro-FastAPI
+uv venv
+```
+
+If `Kokoro-FastAPI` was copied or moved from another location and startup fails with
+`Failed to spawn: uvicorn`, the old `.venv` likely contains stale entrypoints.
+Recreate it in the current path:
+
+```bash
+cd Kokoro-FastAPI
+rm -rf .venv
+uv venv
+```
+
 ```bash
 cd Kokoro-FastAPI
 ./start-gpu.sh
@@ -202,6 +219,8 @@ nvidia-smi dmon -s u -d 1
 ```
 
 Ctrl-C to stop the server once confirmed working.
+
+If you instead see `ModuleNotFoundError` during startup right after recreating `.venv`, run `uv venv` first and then rerun `./start-gpu.sh` so the environment exists before the script tries to install and launch dependencies.
 
 ---
 

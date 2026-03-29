@@ -12,6 +12,7 @@ Shared assumptions:
 - Ubuntu 24.04 with a working NVIDIA driver and CUDA toolkit
 - `uv` is available directly, or via `mise`
 - The `local-speech` repo can be cloned anywhere; examples use `REPO_ROOT`
+- `whisper.cpp` and `Kokoro-FastAPI` are cloned inside that repo before service installation
 - On a 4 GB GPU, the current recommended Whisper model is `small.en` so STT can coexist with Kokoro on GPU
 
 Recommended base packages:
@@ -32,6 +33,15 @@ nvcc --version
 uv --version
 notify-send "STT/TTS" "Notifications work"
 ```
+
+Important prerequisite:
+
+- `scripts/install.sh` does not clone `whisper.cpp`
+- `scripts/install.sh` does not build `whisper.cpp`
+- `scripts/install.sh` does not clone `Kokoro-FastAPI`
+- `scripts/install.sh` does not provision model assets for you
+- `scripts/install.sh` does not create or repair the `Kokoro-FastAPI` virtual environment for you
+- complete the clone, build, and model download steps in this guide first, then install the user units
 
 ## Text to Speech
 
@@ -77,6 +87,8 @@ mise exec python -- python --version
 
 ### Step 3 - Download Kokoro models
 
+This step is treated as mandatory setup for this repo, even if Kokoro can sometimes fetch missing assets lazily on first service start.
+
 ```bash
 cd "$REPO_ROOT"/Kokoro-FastAPI
 uv run python docker/scripts/download_model.py \
@@ -90,6 +102,21 @@ ls "$REPO_ROOT/Kokoro-FastAPI/api/src/models/v1_0/"
 ```
 
 ### Step 4 - Test it interactively first
+
+Before the first manual startup in a fresh clone, initialize the Kokoro virtual environment:
+
+```bash
+cd "$REPO_ROOT"/Kokoro-FastAPI
+uv venv
+```
+
+If this repo was copied or moved from another path and Kokoro fails with `Failed to spawn: uvicorn`, delete the stale environment and recreate it:
+
+```bash
+cd "$REPO_ROOT"/Kokoro-FastAPI
+rm -rf .venv
+uv venv
+```
 
 ```bash
 cd "$REPO_ROOT"/Kokoro-FastAPI

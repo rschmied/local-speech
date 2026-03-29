@@ -43,6 +43,16 @@ It does provide:
 
 ## Quick start
 
+Prerequisite before service installation:
+
+- clone `whisper.cpp` into your `local-speech` repo and build it
+- clone `Kokoro-FastAPI` into your `local-speech` repo
+- download the required Whisper model files
+- treat Kokoro model download as mandatory setup as well, even if Kokoro may fetch missing assets on first start
+- create the Kokoro virtual environment explicitly with `uv venv` before first manual startup if it does not already exist
+
+In other words, `scripts/install.sh` installs the integration layer and user units, but it does not clone, build, or provision the upstream engines for you.
+
 Run the environment checks first:
 
 ```bash
@@ -54,6 +64,17 @@ Install the user units from this repo:
 ```bash
 ./scripts/install.sh
 ```
+
+This assumes these paths already exist inside the repo:
+
+- `whisper.cpp/build/bin/whisper-server`
+- `whisper.cpp/models/ggml-small.en.bin`
+- `Kokoro-FastAPI/start-gpu.sh`
+- `Kokoro-FastAPI/.venv/` initialized for the current clone path
+
+And operationally you should also have Kokoro model assets prepared before relying on the service.
+
+If `Kokoro-FastAPI` was copied or moved from another path, remove its `.venv` and recreate it in the new location before starting the service.
 
 Select the keyboard device for dictation:
 

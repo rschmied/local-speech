@@ -38,6 +38,23 @@ LAUNCH_MODE="$LOCAL_SPEECH_LAUNCH_MODE"
 mkdir -p "$UNIT_DIR"
 mkdir -p "$CONFIG_DIR"
 
+missing=0
+for required_path in \
+  "$ROOT_DIR/whisper.cpp/build/bin/whisper-server" \
+  "$ROOT_DIR/whisper.cpp/models/ggml-small.en.bin" \
+  "$ROOT_DIR/Kokoro-FastAPI/start-gpu.sh"
+do
+  if [ ! -e "$required_path" ]; then
+    printf 'Missing prerequisite: %s\n' "$required_path" >&2
+    missing=1
+  fi
+done
+
+if [ "$missing" -ne 0 ]; then
+  printf 'Clone/build the upstream projects and download required model assets first, then rerun scripts/install.sh.\n' >&2
+  exit 1
+fi
+
 render_template "$ROOT_DIR/systemd/templates/whisper.service.in" "$UNIT_DIR/whisper.service"
 chmod 0644 "$UNIT_DIR/whisper.service"
 install -m 0644 "$ROOT_DIR/systemd/user/ydotoold.service" "$UNIT_DIR/ydotoold.service"
