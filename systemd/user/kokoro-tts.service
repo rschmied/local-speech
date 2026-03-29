@@ -1,0 +1,15 @@
+# ~/.config/systemd/user/kokoro-tts.service
+[Unit]
+Description=Kokoro TTS server (GPU)
+After=network.target
+
+[Service]
+# /home/rschmied/Projects/local-speech/Kokoro-FastAPI
+ExecStart=/usr/bin/env mise exec uv -- %h/Projects/local-speech/Kokoro-FastAPI/start-gpu.sh
+WorkingDirectory=%h/Projects/local-speech/Kokoro-FastAPI
+Restart=on-failure
+RestartSec=5
+Environment=HOME=%h
+
+[Install]
+WantedBy=default.target

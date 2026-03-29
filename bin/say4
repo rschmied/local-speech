@@ -1,0 +1,48 @@
+#!/bin/bash
+set -euo pipefail
+
+base_url="http://localhost:8880"
+voices_url="$base_url/v1/audio/voices"
+speech_url="$base_url/v1/audio/speech"
+lock_dir="${XDG_RUNTIME_DIR:-/tmp}"
+lock_file="$lock_dir/say4.lock"
+
+warmup_s="0.2"
+warmup_volume="0.02"
+
+mkdir -p "$lock_dir"
+exec 9> "$lock_file"
+if ! flock -n 9; then
+  exit 0
+fi
+
+if [ "$#" -gt 0 ]; then
+  text="$*"
+elif [ ! -t 0 ]; then
+  text="$(cat)"
+else
+  echo "usage: $0 <text>  or pipe text to stdin" >&2
+  exit 1
+fi
+
+[ -n "$text" ] || exit 1
+
+if ! curl -fsS --max-time 2 "$voices_url" > /dev/null; then
+  echo "speech service is not available at $voices_url" >&2
+  exit 1
+fi
+jq -n --arg input "$text" \
+  '{model:"kokoro", input:$input, voice:"af_heart", response_format:"wav"}' |
+  curl -fsS -X POST "$speech_url" \
+    -H "Content-Type: application/json" \
+    -d @- |
+  ffmpeg -nostdin -loglevel error \
+    -f lavfi -t $warmup_s -i "anoisesrc=color=white:sample_rate=24000:amplitude=$warmup_volume" \
+    -i pipe:0 \
+    -filter_complex "[0:a]highpass=f=7000,lowpass=f=11000,volume=0.015[warm];[warm][1:a]concat=n=2:v=0:a=1[out]" \
+    -map "[out]" \
+    -f s16le -acodec pcm_s16le -ac 1 -ar 24000 - |
+  aplay --format s16 --rate=24000 -
+# tee /tmp/out.wav |
+# pw-play --format s16 --channels=1 --rate=24000 --volume=10.0 -
+exit

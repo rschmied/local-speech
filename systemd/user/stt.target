@@ -1,0 +1,7 @@
+[Unit]
+Description=Local speech-to-text stack
+Wants=whisper.service ydotoold.service dictation.service
+After=graphical-session.target
+
+[Install]
+WantedBy=default.target
