@@ -12,8 +12,8 @@
 """
 dictation.py — hold RIGHT_CTRL to record, release to transcribe and type.
 
-Usage:  uv run dictation.py [--mic-mode hold|always]
-        chmod +x dictation.py && ./dictation.py [--mic-mode hold|always]
+Usage:  uv run dictation.py [--device /dev/input/by-id/...]
+        chmod +x dictation.py && ./dictation.py [--device /dev/input/by-id/...]
 
 Requires: ydotoold running, user in 'input' group, YDOTOOL_SOCKET set
 Works on both X11 and Wayland.
@@ -56,17 +56,10 @@ def parse_args() -> argparse.Namespace:
         "--device",
         help=f"Keyboard device path. Overrides ${DEVICE_ENV_VAR} if set.",
     )
-    parser.add_argument(
-        "--mic-mode",
-        choices=("hold", "always"),
-        default="hold",
-        help="'hold' opens the mic only while the hotkey is held; 'always' keeps it open for lower latency.",
-    )
     return parser.parse_args()
 
 
 args = parse_args()
-MIC_MODE = args.mic_mode
 
 
 def resolve_device_path(cli_value: str | None) -> str:
@@ -87,9 +80,9 @@ def resolve_device_path(cli_value: str | None) -> str:
     return device_path
 
 
-def notify(msg: str, urgency: str = "normal") -> None:
+def notify(msg: str) -> None:
     subprocess.Popen(
-        ["notify-send", "-t", "2000", "-u", urgency, "Dictation", msg],
+        ["notify-send", "--expire-time", "2000", "--transient", "Dictation", msg],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -149,18 +142,15 @@ def start_recording() -> bool:
         if recording:
             return False
 
-    new_stream = None
-    if MIC_MODE == "hold":
-        try:
-            new_stream = open_stream()
-        except Exception as e:
-            notify(f"⚠ Mic open failed: {e}", urgency="critical")
-            return False
+    try:
+        new_stream = open_stream()
+    except Exception as e:
+        print(f"Mic open failed: {e}", file=sys.stderr)
+        return False
 
     with state_lock:
         frames.clear()
-        if MIC_MODE == "hold":
-            stream = new_stream
+        stream = new_stream
         recording = True
 
     return True
@@ -173,7 +163,7 @@ def stop_recording() -> list:
         if not recording:
             return []
         recording = False
-        current_stream = stream if MIC_MODE == "hold" else None
+        current_stream = stream
 
     if current_stream is not None:
         try:
@@ -188,28 +178,16 @@ def stop_recording() -> list:
     with state_lock:
         captured_frames = list(frames)
         frames.clear()
-        if MIC_MODE == "hold":
-            stream = None
+        stream = None
 
     return captured_frames
 
 
-def ensure_always_stream() -> None:
-    global stream
-
-    try:
-        stream = open_stream()
-    except Exception as e:
-        notify(f"⚠ Mic open failed: {e}", urgency="critical")
-        raise SystemExit(1) from e
-
-
 def transcribe_and_type(captured_frames: list) -> None:
-    if not captured_frames:
-        notify("⚠ No audio captured", urgency="critical")
-        return
+    notify("Recording stopped")
 
-    notify("⏳ Transcribing...")
+    if not captured_frames:
+        return
 
     audio = numpy.concatenate(captured_frames)
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -224,7 +202,7 @@ def transcribe_and_type(captured_frames: list) -> None:
                 )
             text = r.json().get("text", "").strip()
         except Exception as e:
-            notify(f"⚠ Error: {e}", urgency="critical")
+            print(f"Transcription error: {e}", file=sys.stderr)
             return
 
     if text:
@@ -234,17 +212,10 @@ def transcribe_and_type(captured_frames: list) -> None:
             ["ydotool", "type", "--key-delay=1", "--", text], stderr=subprocess.DEVNULL
         )
 
-        notify(f"✓ {text[:60]}{'...' if len(text) > 60 else ''}")
-    else:
-        notify("⚠ No transcription returned", urgency="low")
-
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 signal.signal(signal.SIGTERM, shutdown)
 signal.signal(signal.SIGINT, shutdown)
-
-if MIC_MODE == "always":
-    ensure_always_stream()
 
 DEVICE = resolve_device_path(args.device)
 dev = evdev.InputDevice(DEVICE)
@@ -252,7 +223,7 @@ dev = evdev.InputDevice(DEVICE)
 try:
     # dev.grab()  # exclusive grab — prevents hotkey firing system shortcuts while held
     print(
-        f"Dictation ready. Hold {evdev.ecodes.KEY[HOTKEY]} to record. mic-mode={MIC_MODE} device={DEVICE}"
+        f"Dictation ready. Hold {evdev.ecodes.KEY[HOTKEY]} to record. device={DEVICE}"
     )
 
     for event in dev.read_loop():
@@ -268,7 +239,7 @@ try:
 
         if key.keystate == key.key_down and not recording:
             if start_recording():
-                notify("🎙 Recording...", urgency="low")
+                notify("Recording started")
 
         elif key.keystate == key.key_up and recording:
             captured_frames = stop_recording()

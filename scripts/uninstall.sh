@@ -21,6 +21,7 @@ Removed installed local-speech user units and ~/bin/say4.
 
 Left in place:
   ~/.config/local-speech/dictation.env
+  ~/.config/local-speech/install.env
 
-Remove that manually if you want to clear the selected keyboard device too.
+Remove those manually if you want to clear keyboard selection and install metadata too.
 EOF

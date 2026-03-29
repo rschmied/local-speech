@@ -7,7 +7,7 @@ PartOf=stt.target
 [Service]
 EnvironmentFile=-%h/.config/local-speech/dictation.env
 Environment=YDOTOOL_SOCKET=%t/ydotool.sock
-ExecStart=/usr/bin/env mise exec uv -- uv run %h/Projects/local-speech/dictation.py
+ExecStart=__DICTATION_EXEC__ "__LOCAL_SPEECH_ROOT__/dictation.py"
 Restart=on-failure
 RestartSec=2
 

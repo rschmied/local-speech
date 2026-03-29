@@ -11,11 +11,10 @@
 ```
 RIGHT_CTRL held
   └─ evdev watches keyboard events
-  └─ mic-mode=hold   → open mic stream now, buffer audio
-  └─ mic-mode=always → mic stream already open, start buffering now
+  └─ open mic stream now, buffer audio
 
 RIGHT_CTRL released
-  └─ mic-mode=hold   → stop/close mic stream
+  └─ stop/close mic stream
   └─ WAV written to tmpfile (16kHz, mono, 16-bit PCM)
   └─ POST → whisper-server (CUDA, small.en) → localhost:8080
   └─ ~200–400ms inference on RTX A1000
@@ -88,7 +87,7 @@ sudo apt install libnotify-bin
 nvidia-smi                  # should show GPU name, driver version, VRAM
 nvcc --version              # should show CUDA release X.Y
 gcc --version               # should show GCC present
-mise exec uv -- uv --version   # should show uv x.y.z
+uv --version   # should show uv x.y.z
 notify-send "Test" "notify-send works"   # should pop a desktop notification
 ```
 
@@ -167,8 +166,8 @@ ffmpeg -f lavfi -i anullsrc=r=16000:cl=mono -t 3 -c:a pcm_s16le /tmp/smoke.wav
 Description=whisper.cpp STT server (CUDA)
 
 [Service]
-ExecStart=%h/Projects/local-speech/whisper.cpp/build/bin/whisper-server \
-  --model %h/Projects/local-speech/whisper.cpp/models/ggml-small.en.bin \
+ExecStart=/absolute/path/to/local-speech/whisper.cpp/build/bin/whisper-server \
+  --model /absolute/path/to/local-speech/whisper.cpp/models/ggml-small.en.bin \
   --host 127.0.0.1 \
   --port 8080 \
   --convert \
@@ -304,8 +303,9 @@ ydotool type -- "hello from ydotool"
 ## Step 6 — Find your keyboard device
 
 ```bash
-cd ~/Projects/local-speech
-./which-device.py
+REPO_ROOT=/path/to/local-speech
+cd "$REPO_ROOT"
+./scripts/select-device.sh
 ```
 
 This writes the chosen keyboard path to `~/.config/local-speech/dictation.env` as `LOCAL_SPEECH_KEYBOARD_DEVICE`.
@@ -319,7 +319,7 @@ grep '^LOCAL_SPEECH_KEYBOARD_DEVICE=' ~/.config/local-speech/dictation.env
 
 ## Step 7 — Dictation script
 
-Save as `~/Projects/local-speech/dictation.py`:
+Save into your cloned repo as `dictation.py`:
 
 The script uses [PEP 723](https://peps.python.org/pep-0723/) inline metadata so `uv` can
 manage dependencies automatically — no manual `pip install` needed.
@@ -339,14 +339,15 @@ manage dependencies automatically — no manual `pip install` needed.
 """
 dictation.py — hold RIGHT_CTRL to record, release to transcribe and type.
 
-Usage:  uv run dictation.py [--mic-mode hold|always]
-        chmod +x dictation.py && ./dictation.py [--mic-mode hold|always]
+Usage:  uv run dictation.py [--device /dev/input/by-id/...]
+        chmod +x dictation.py && ./dictation.py [--device /dev/input/by-id/...]
 
 Requires: ydotoold running, user in 'input' group, YDOTOOL_SOCKET set
 Works on both X11 and Wayland.
 """
 
 import argparse
+import os
 import signal
 import subprocess
 import sys
@@ -382,21 +383,16 @@ def parse_args() -> argparse.Namespace:
         "--device",
         help=f"Keyboard device path. Overrides ${DEVICE_ENV_VAR} if set.",
     )
-    parser.add_argument(
-        "--mic-mode",
-        choices=("hold", "always"),
-        default="hold",
-        help="'hold' opens the mic only while the hotkey is held; 'always' keeps it open for lower latency.",
-    )
     return parser.parse_args()
 
 
 args = parse_args()
-MIC_MODE = args.mic_mode
 
 
 def resolve_device_path(cli_value: str | None) -> str:
-    device_path = (cli_value or os.environ.get(DEVICE_ENV_VAR, "")).strip() or DEFAULT_DEVICE
+    device_path = (
+        cli_value or os.environ.get(DEVICE_ENV_VAR, "")
+    ).strip() or DEFAULT_DEVICE
 
     if "YOUR-KEYBOARD-BY-ID-NAME-HERE" in device_path:
         raise SystemExit(
@@ -411,9 +407,9 @@ def resolve_device_path(cli_value: str | None) -> str:
     return device_path
 
 
-def notify(msg: str, urgency: str = "normal") -> None:
+def notify(msg: str) -> None:
     subprocess.Popen(
-        ["notify-send", "-t", "2000", "-u", urgency, "Dictation", msg],
+        ["notify-send", "-t", "2000", "Dictation", msg],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -473,18 +469,15 @@ def start_recording() -> bool:
         if recording:
             return False
 
-    new_stream = None
-    if MIC_MODE == "hold":
-        try:
-            new_stream = open_stream()
-        except Exception as e:
-            notify(f"⚠ Mic open failed: {e}", urgency="critical")
-            return False
+    try:
+        new_stream = open_stream()
+    except Exception as e:
+        print(f"Mic open failed: {e}", file=sys.stderr)
+        return False
 
     with state_lock:
         frames.clear()
-        if MIC_MODE == "hold":
-            stream = new_stream
+        stream = new_stream
         recording = True
 
     return True
@@ -497,7 +490,7 @@ def stop_recording() -> list:
         if not recording:
             return []
         recording = False
-        current_stream = stream if MIC_MODE == "hold" else None
+        current_stream = stream
 
     if current_stream is not None:
         try:
@@ -512,28 +505,16 @@ def stop_recording() -> list:
     with state_lock:
         captured_frames = list(frames)
         frames.clear()
-        if MIC_MODE == "hold":
-            stream = None
+        stream = None
 
     return captured_frames
 
 
-def ensure_always_stream() -> None:
-    global stream
-
-    try:
-        stream = open_stream()
-    except Exception as e:
-        notify(f"⚠ Mic open failed: {e}", urgency="critical")
-        raise SystemExit(1) from e
-
-
 def transcribe_and_type(captured_frames: list) -> None:
-    if not captured_frames:
-        notify("⚠ No audio captured", urgency="critical")
-        return
+    notify("Recording stopped")
 
-    notify("⏳ Transcribing...")
+    if not captured_frames:
+        return
 
     audio = numpy.concatenate(captured_frames)
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -548,7 +529,7 @@ def transcribe_and_type(captured_frames: list) -> None:
                 )
             text = r.json().get("text", "").strip()
         except Exception as e:
-            notify(f"⚠ Error: {e}", urgency="critical")
+            print(f"Transcription error: {e}", file=sys.stderr)
             return
 
     if text:
@@ -558,17 +539,10 @@ def transcribe_and_type(captured_frames: list) -> None:
             ["ydotool", "type", "--key-delay=1", "--", text], stderr=subprocess.DEVNULL
         )
 
-        notify(f"✓ {text[:60]}{'...' if len(text) > 60 else ''}")
-    else:
-        notify("⚠ No transcription returned", urgency="low")
-
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 signal.signal(signal.SIGTERM, shutdown)
 signal.signal(signal.SIGINT, shutdown)
-
-if MIC_MODE == "always":
-    ensure_always_stream()
 
 DEVICE = resolve_device_path(args.device)
 dev = evdev.InputDevice(DEVICE)
@@ -576,7 +550,7 @@ dev = evdev.InputDevice(DEVICE)
 try:
     # dev.grab()  # exclusive grab — prevents hotkey firing system shortcuts while held
     print(
-        f"Dictation ready. Hold {evdev.ecodes.KEY[HOTKEY]} to record. mic-mode={MIC_MODE} device={DEVICE}"
+        f"Dictation ready. Hold {evdev.ecodes.KEY[HOTKEY]} to record. device={DEVICE}"
     )
 
     for event in dev.read_loop():
@@ -592,7 +566,7 @@ try:
 
         if key.keystate == key.key_down and not recording:
             if start_recording():
-                notify("🎙 Recording...", urgency="low")
+                notify("Recording started")
 
         elif key.keystate == key.key_up and recording:
             captured_frames = stop_recording()
@@ -602,6 +576,14 @@ try:
 
 except KeyboardInterrupt:
     shutdown()
+
+# finally:
+#     # Fallback: ensure grab is always released even on unexpected exceptions
+#     try:
+#         dev.ungrab()
+#     except Exception:
+#         pass
+
 ```
 
 **✓ Verify this step:**
@@ -609,30 +591,21 @@ except KeyboardInterrupt:
 # Run directly first — much easier to see errors than via systemd
 # uv will create an isolated venv and install deps on first run (~10s),
 # then it's cached and subsequent runs are instant
-uv run ~/Projects/local-speech/dictation.py --mic-mode hold
+./scripts/run-dictation.sh
 
 # Expected output in terminal:
-#   Dictation ready. Hold KEY_RIGHTCTRL to record. mic-mode=hold
+#   Dictation ready. Hold KEY_RIGHTCTRL to record. device=/dev/input/by-id/...
 
 # Now test the full loop:
 # 1. Focus a text field (terminal, browser, anywhere)
-# 2. Hold RIGHT_CTRL → should see 🎙 Recording... notification
+# 2. Hold RIGHT_CTRL → should see a "Recording started" notification
 # 3. Say something
-# 4. Release RIGHT_CTRL → should see ⏳ Transcribing...
-# 5. ~1s later → ✓ notification + text typed into focused window
+# 4. Release RIGHT_CTRL → should see a "Recording stopped" notification
+# 5. ~1s later → text typed into focused window
 
 # Ctrl-C to exit when satisfied
-
-# Optional low-latency mode: keep the mic open continuously
-uv run ~/Projects/local-speech/dictation.py --mic-mode always
 ```
 
-### Mic modes
-
-| Mode | Behavior | Tradeoff |
-|---|---|---|
-| `hold` | Default. Open the mic only while RIGHT_CTRL is held | Mic indicator matches capture time; slightly higher startup latency |
-| `always` | Keep the mic stream open continuously and only buffer while recording | Lowest latency; Ubuntu shows the mic in use all the time |
 
 ---
 
@@ -662,7 +635,7 @@ PartOf=stt.target
 [Service]
 EnvironmentFile=-%h/.config/local-speech/dictation.env
 Environment=YDOTOOL_SOCKET=%t/ydotool.sock
-ExecStart=/usr/bin/env mise exec uv -- uv run %h/Projects/local-speech/dictation.py
+ExecStart=/usr/bin/env uv run /absolute/path/to/local-speech/dictation.py
 Restart=on-failure
 RestartSec=2
 
@@ -677,8 +650,8 @@ Description=whisper.cpp STT server (CUDA)
 PartOf=stt.target
 
 [Service]
-ExecStart=%h/Projects/local-speech/whisper.cpp/build/bin/whisper-server \
-  --model %h/Projects/local-speech/whisper.cpp/models/ggml-small.en.bin \
+ExecStart=/absolute/path/to/local-speech/whisper.cpp/build/bin/whisper-server \
+  --model /absolute/path/to/local-speech/whisper.cpp/models/ggml-small.en.bin \
   --host 127.0.0.1 \
   --port 8080 \
   --convert \
@@ -714,8 +687,8 @@ Three notification states visible in the corner of the screen:
 
 | Event | Notification | Urgency |
 |---|---|---|
-| Key down | 🎙 Recording... | low (subtle) |
-| Key up | ⏳ Transcribing... | normal |
+| Key down | Recording started | normal |
+| Key up | Recording stopped | normal |
 | Done | ✓ first 60 chars of text | normal, auto-dismiss |
 | Error | ⚠ message | critical |
 
@@ -779,7 +752,7 @@ To improve accuracy: switch to `large-v3` if you can spare the VRAM. To keep Kok
 **Hotkey not detected**
 - Confirm device path with evdev listing in Step 6
 - Some keyboards expose multiple event nodes — try each `-kbd` entry
-- Run the script directly with `uv run ~/Projects/local-speech/dictation.py` to see errors before using the service
+- Run the script directly with `./scripts/run-dictation.sh` to see errors before using the service
 
 **Notifications not appearing from systemd service**
 - Test manually: `notify-send "Test" "hello"`

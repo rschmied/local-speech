@@ -15,10 +15,14 @@ service units, target unit, and documentation in one place.
 - `which-device.py` - interactive keyboard selector that writes runtime config
 - `bin/say4` - local TTS playback helper
 - `config/dictation.env.example` - sample runtime configuration
-- `systemd/user/` - user service units and `stt.target`
+- `systemd/templates/` - rendered service unit templates
+- `systemd/user/` - static user units such as `ydotoold.service` and `stt.target`
 - `docs/` - setup and reference documentation
+- `scripts/common.sh` - launcher detection shared by helper scripts
 - `scripts/check.sh` - environment and dependency checks
 - `scripts/install.sh` - install units into `~/.config/systemd/user`
+- `scripts/select-device.sh` - launch the interactive keyboard selector with detected tooling
+- `scripts/run-dictation.sh` - launch dictation with detected tooling
 - `scripts/uninstall.sh` - remove installed units and helper script
 
 ## Scope
@@ -33,7 +37,7 @@ This repo does not bundle:
 It does provide:
 
 - documented prerequisites
-- service unit templates ready to install
+- service templates rendered for the actual clone path at install time
 - helper scripts
 - validation tooling
 
@@ -54,7 +58,13 @@ Install the user units from this repo:
 Select the keyboard device for dictation:
 
 ```bash
-./which-device.py
+./scripts/select-device.sh
+```
+
+Run dictation manually from the current clone:
+
+```bash
+./scripts/run-dictation.sh
 ```
 
 Remove installed assets later if needed:
@@ -74,5 +84,6 @@ docs/local-voice-setup.md
 - STT services are grouped under `stt.target`
 - `ydotoold` uses `%t/ydotool.sock`
 - Dictation reads `LOCAL_SPEECH_KEYBOARD_DEVICE` from `~/.config/local-speech/dictation.env`
-- The repository assumes a local clone path of `~/Projects/local-speech`
+- `scripts/install.sh` renders units using the actual clone path of the repo
+- The installer and helper scripts prefer plain `uv` when available and fall back to `mise exec uv -- ...`
 - Current recommended Whisper model for 4 GB VRAM systems is `small.en`

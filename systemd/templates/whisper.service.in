@@ -4,8 +4,8 @@ Description=whisper.cpp STT server (CUDA)
 PartOf=stt.target
 
 [Service]
-ExecStart=%h/Projects/local-speech/whisper.cpp/build/bin/whisper-server \
-  --model %h/Projects/local-speech/whisper.cpp/models/ggml-small.en.bin \
+ExecStart="__LOCAL_SPEECH_ROOT__/whisper.cpp/build/bin/whisper-server" \
+  --model "__LOCAL_SPEECH_ROOT__/whisper.cpp/models/ggml-small.en.bin" \
   --host 127.0.0.1 \
   --port 8080 \
   --convert \

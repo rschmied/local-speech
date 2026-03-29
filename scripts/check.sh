@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$ROOT_DIR/scripts/common.sh"
 
 pass() {
   printf '[ok] %s\n' "$1"
@@ -9,6 +10,10 @@ pass() {
 
 warn() {
   printf '[warn] %s\n' "$1"
+}
+
+info() {
+  printf '[info] %s\n' "$1"
 }
 
 check_cmd() {
@@ -33,8 +38,20 @@ check_cmd ydotoold "ydotoold"
 check_cmd notify-send "notify-send"
 check_cmd nvidia-smi "nvidia-smi"
 check_cmd nvcc "nvcc"
-check_cmd mise "mise"
-check_cmd uv "uv"
+
+if command -v uv >/dev/null 2>&1; then
+  pass "uv: $(command -v uv)"
+elif local_speech_detect_launchers >/dev/null 2>&1; then
+  pass "uv available via mise"
+else
+  warn "uv unavailable, and mise could not provide it"
+fi
+
+if command -v mise >/dev/null 2>&1; then
+  info "mise available: $(command -v mise)"
+else
+  info "mise not found (optional)"
+fi
 
 if command -v systemctl >/dev/null 2>&1; then
   if systemctl --user --version >/dev/null 2>&1; then
@@ -65,11 +82,15 @@ fi
 for rel in \
   dictation.py \
   which-device.py \
+  scripts/common.sh \
+  scripts/select-device.sh \
+  scripts/run-dictation.sh \
   config/dictation.env.example \
+  systemd/templates/whisper.service.in \
+  systemd/templates/dictation.service.in \
+  systemd/templates/kokoro-tts.service.in \
   bin/say4 \
-  systemd/user/whisper.service \
   systemd/user/ydotoold.service \
-  systemd/user/dictation.service \
   systemd/user/stt.target \
   docs/local-voice-setup.md
 do
@@ -84,6 +105,12 @@ if [ -f "$HOME/.config/local-speech/dictation.env" ]; then
   pass "runtime config present: ~/.config/local-speech/dictation.env"
 else
   warn "runtime config missing: ~/.config/local-speech/dictation.env (run ./which-device.py)"
+fi
+
+if [ -f "$HOME/.config/local-speech/install.env" ]; then
+  pass "install metadata present: ~/.config/local-speech/install.env"
+else
+  info "install metadata missing: ~/.config/local-speech/install.env"
 fi
 
 printf 'Check complete.\n'

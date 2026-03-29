@@ -1,6 +1,6 @@
 # Local Voice Setup on Ubuntu 24.04
 
-This guide combines the local Kokoro TTS and whisper.cpp dictation setup for `~/Projects/local-speech` into one reference.
+This guide combines the local Kokoro TTS and whisper.cpp dictation setup for a `local-speech` clone into one reference.
 
 Both services run fully local, use the existing NVIDIA/CUDA stack, and expose simple localhost APIs:
 
@@ -10,8 +10,8 @@ Both services run fully local, use the existing NVIDIA/CUDA stack, and expose si
 Shared assumptions:
 
 - Ubuntu 24.04 with a working NVIDIA driver and CUDA toolkit
-- `mise` manages `uv`
-- Projects live under `~/Projects/local-speech`
+- `uv` is available directly, or via `mise`
+- The `local-speech` repo can be cloned anywhere; examples use `REPO_ROOT`
 - On a 4 GB GPU, the current recommended Whisper model is `small.en` so STT can coexist with Kokoro on GPU
 
 Recommended base packages:
@@ -25,9 +25,11 @@ sudo apt install libasound2-dev libnotify-bin ydotool espeak-ng
 Quick verification:
 
 ```bash
+REPO_ROOT=/path/to/local-speech
+
 nvidia-smi
 nvcc --version
-mise exec uv -- uv --version
+uv --version
 notify-send "STT/TTS" "Notifications work"
 ```
 
@@ -50,9 +52,9 @@ Kokoro keeps RAM and VRAM allocated while running, so the best pattern is to sta
 ### Step 1 - Clone Kokoro-FastAPI
 
 ```bash
-cd ~/Projects/local-speech
+cd "$REPO_ROOT"
 git clone https://github.com/remsky/Kokoro-FastAPI.git
-cd ~/Projects/local-speech/Kokoro-FastAPI
+cd "$REPO_ROOT"/Kokoro-FastAPI
 ```
 
 Verify the repo looks right:
@@ -67,7 +69,7 @@ ls
 Kokoro-FastAPI is safest on Python `3.12`.
 
 ```bash
-cd ~/Projects/local-speech/Kokoro-FastAPI
+cd "$REPO_ROOT"/Kokoro-FastAPI
 mise local python 3.12
 mise exec python -- python --version
 # Expected: Python 3.12.x
@@ -76,21 +78,21 @@ mise exec python -- python --version
 ### Step 3 - Download Kokoro models
 
 ```bash
-cd ~/Projects/local-speech/Kokoro-FastAPI
-mise exec uv -- uv run python docker/scripts/download_model.py \
+cd "$REPO_ROOT"/Kokoro-FastAPI
+uv run python docker/scripts/download_model.py \
   --output api/src/models/v1_0
 ```
 
 Verify the weights exist:
 
 ```bash
-ls ~/Projects/local-speech/Kokoro-FastAPI/api/src/models/v1_0/
+ls "$REPO_ROOT/Kokoro-FastAPI/api/src/models/v1_0/"
 ```
 
 ### Step 4 - Test it interactively first
 
 ```bash
-cd ~/Projects/local-speech/Kokoro-FastAPI
+cd "$REPO_ROOT"/Kokoro-FastAPI
 ./start-gpu.sh
 ```
 
@@ -115,7 +117,7 @@ Stop the server with `Ctrl-C` once the test succeeds.
 
 ### Step 5 - Install the user service
 
-Use this current user unit:
+The installer renders this unit using your actual clone path:
 
 ```ini
 # ~/.config/systemd/user/kokoro-tts.service
@@ -124,8 +126,8 @@ Description=Kokoro TTS server (GPU)
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/env mise exec uv -- %h/Projects/local-speech/Kokoro-FastAPI/start-gpu.sh
-WorkingDirectory=%h/Projects/local-speech/Kokoro-FastAPI
+ExecStart=/usr/bin/env bash /absolute/path/to/local-speech/Kokoro-FastAPI/start-gpu.sh
+WorkingDirectory=/absolute/path/to/local-speech/Kokoro-FastAPI
 Restart=on-failure
 RestartSec=5
 Environment=HOME=%h
@@ -256,9 +258,9 @@ The current model choice is `small.en`, specifically to leave enough VRAM for Ko
 ### Step 1 - Build whisper.cpp with CUDA
 
 ```bash
-cd ~/Projects/local-speech
+cd "$REPO_ROOT"
 git clone https://github.com/ggml-org/whisper.cpp
-cd ~/Projects/local-speech/whisper.cpp
+cd "$REPO_ROOT"/whisper.cpp
 
 cmake -B build -DGGML_CUDA=1
 cmake --build build --config Release -j"$(nproc)"
@@ -267,8 +269,8 @@ cmake --build build --config Release -j"$(nproc)"
 Verify the build:
 
 ```bash
-ls ~/Projects/local-speech/whisper.cpp/build/bin/
-grep "GGML_CUDA:BOOL" ~/Projects/local-speech/whisper.cpp/build/CMakeCache.txt
+ls "$REPO_ROOT/whisper.cpp/build/bin/"
+grep "GGML_CUDA:BOOL" "$REPO_ROOT/whisper.cpp/build/CMakeCache.txt"
 # Expected: GGML_CUDA:BOOL=1
 ```
 
@@ -277,18 +279,18 @@ grep "GGML_CUDA:BOOL" ~/Projects/local-speech/whisper.cpp/build/CMakeCache.txt
 Use `small.en` for the current balanced setup:
 
 ```bash
-cd ~/Projects/local-speech/whisper.cpp
+cd "$REPO_ROOT"/whisper.cpp
 ./models/download-ggml-model.sh small.en
 ```
 
 Verify the model and a local smoke test:
 
 ```bash
-ls -lh ~/Projects/local-speech/whisper.cpp/models/ggml-small.en.bin
+ls -lh "$REPO_ROOT/whisper.cpp/models/ggml-small.en.bin"
 
 ffmpeg -f lavfi -i anullsrc=r=16000:cl=mono -t 3 -c:a pcm_s16le /tmp/smoke.wav
-~/Projects/local-speech/whisper.cpp/build/bin/whisper-cli \
-  -m ~/Projects/local-speech/whisper.cpp/models/ggml-small.en.bin \
+"$REPO_ROOT/whisper.cpp/build/bin/whisper-cli" \
+  -m "$REPO_ROOT/whisper.cpp/models/ggml-small.en.bin" \
   -f /tmp/smoke.wav
 ```
 
@@ -299,7 +301,7 @@ In the output, look for CUDA initialization lines such as:
 
 ### Step 3 - Install the Whisper user service
 
-Use this current user unit:
+The installer renders this unit using your actual clone path:
 
 ```ini
 # ~/.config/systemd/user/whisper.service
@@ -308,8 +310,8 @@ Description=whisper.cpp STT server (CUDA)
 PartOf=stt.target
 
 [Service]
-ExecStart=%h/Projects/local-speech/whisper.cpp/build/bin/whisper-server \
-  --model %h/Projects/local-speech/whisper.cpp/models/ggml-small.en.bin \
+ExecStart=/absolute/path/to/local-speech/whisper.cpp/build/bin/whisper-server \
+  --model /absolute/path/to/local-speech/whisper.cpp/models/ggml-small.en.bin \
   --host 127.0.0.1 \
   --port 8080 \
   --convert \
@@ -419,15 +421,15 @@ ydotool type -- "hello from ydotool"
 
 ### Step 5 - Configure the dictation script
 
-The guide assumes `~/Projects/local-speech/dictation.py` already exists and is run with `uv`.
+The guide assumes the repo already exists and `dictation.py` is run with `uv`.
 The keyboard device is parameterized via `LOCAL_SPEECH_KEYBOARD_DEVICE`, typically stored in
 `~/.config/local-speech/dictation.env`.
 
 Select the keyboard interactively:
 
 ```bash
-cd ~/Projects/local-speech
-./which-device.py
+cd "$REPO_ROOT"
+./scripts/select-device.sh
 ```
 
 This writes the selected device path into `~/.config/local-speech/dictation.env`.
@@ -441,19 +443,9 @@ Important script settings:
 Run it directly first:
 
 ```bash
-mise exec uv -- uv run ~/Projects/local-speech/dictation.py --mic-mode hold
+./scripts/run-dictation.sh
 ```
 
-Optional lower-latency mode:
-
-```bash
-mise exec uv -- uv run ~/Projects/local-speech/dictation.py --mic-mode always
-```
-
-Mode summary:
-
-- `hold` - mic opens only while the key is held; cleaner privacy model
-- `always` - mic stream stays open for slightly lower latency
 
 ### Step 5a - Add a combined STT target
 
@@ -472,7 +464,7 @@ WantedBy=default.target
 
 ### Step 6 - Install the dictation user service
 
-Use this current unit:
+The installer renders this unit using your actual clone path and either plain `uv` or `mise exec uv -- uv run`, depending on what is available:
 
 ```ini
 # ~/.config/systemd/user/dictation.service
@@ -484,7 +476,7 @@ PartOf=stt.target
 [Service]
 EnvironmentFile=-%h/.config/local-speech/dictation.env
 Environment=YDOTOOL_SOCKET=%t/ydotool.sock
-ExecStart=/usr/bin/env mise exec uv -- uv run %h/Projects/local-speech/dictation.py
+ExecStart=/usr/bin/env uv run /absolute/path/to/local-speech/dictation.py
 Restart=on-failure
 RestartSec=2
 
@@ -538,7 +530,7 @@ systemctl --user status ydotoold
 - If `ydotoold` fails with `failed to open uinput device`, re-check the udev rule and `/dev/uinput` permissions
 - If `ydotool type` does nothing, confirm the daemon is running and `YDOTOOL_SOCKET=$XDG_RUNTIME_DIR/ydotool.sock`
 - If Whisper returns `404`, the service is missing `--inference-path "/v1/audio/transcriptions"`
-- If the hotkey is never detected, rerun `./which-device.py` and restart `dictation.service`
+- If the hotkey is never detected, rerun `./scripts/select-device.sh` and restart `dictation.service`
 
 ## Links
 

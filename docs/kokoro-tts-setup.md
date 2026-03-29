@@ -101,7 +101,7 @@ sudo apt install espeak-ng
 ```bash
 espeak-ng --version       # should show espeak-ng version
 nvidia-smi                # GPU still visible
-mise exec uv -- uv --version
+uv --version
 ```
 
 ---
@@ -210,6 +210,8 @@ Ctrl-C to stop the server once confirmed working.
 > **Do not use `--now` or `enable` here** — the service is managed on demand,
 > not started at boot. See the on-demand section above.
 
+The installer renders this unit using your actual clone path, and uses either plain `uv` or `mise`-managed `uv` depending on what is available.
+
 ```ini
 # ~/.config/systemd/user/kokoro-tts.service
 [Unit]
@@ -217,8 +219,8 @@ Description=Kokoro TTS server (GPU)
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/env mise exec uv -- %h/Projects/local-speech/Kokoro-FastAPI/start-gpu.sh
-WorkingDirectory=%h/Projects/local-speech/Kokoro-FastAPI
+ExecStart=/usr/bin/env bash /absolute/path/to/local-speech/Kokoro-FastAPI/start-gpu.sh
+WorkingDirectory=/absolute/path/to/local-speech/Kokoro-FastAPI
 Restart=on-failure
 RestartSec=5
 Environment=HOME=%h

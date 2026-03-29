@@ -4,9 +4,8 @@ Description=Kokoro TTS server (GPU)
 After=network.target
 
 [Service]
-# /home/rschmied/Projects/local-speech/Kokoro-FastAPI
-ExecStart=/usr/bin/env mise exec uv -- %h/Projects/local-speech/Kokoro-FastAPI/start-gpu.sh
-WorkingDirectory=%h/Projects/local-speech/Kokoro-FastAPI
+ExecStart=__KOKORO_EXEC__ "__LOCAL_SPEECH_ROOT__/Kokoro-FastAPI/start-gpu.sh"
+WorkingDirectory=__LOCAL_SPEECH_ROOT__/Kokoro-FastAPI
 Restart=on-failure
 RestartSec=5
 Environment=HOME=%h
