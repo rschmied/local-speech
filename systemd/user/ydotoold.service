@@ -1,7 +1,7 @@
 [Unit]
 Description=ydotool input automation daemon
 After=graphical-session.target
-PartOf=stt.target
+PartOf=speech.target
 
 [Service]
 ExecStart=/usr/bin/ydotoold --socket %t/ydotool.sock
@@ -9,5 +9,4 @@ Restart=on-failure
 RestartSec=1s
 
 [Install]
-WantedBy=stt.target
-
+WantedBy=speech.target

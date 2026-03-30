@@ -16,7 +16,7 @@ service units, target unit, and documentation in one place.
 - `bin/say4` - local TTS playback helper
 - `config/dictation.env.example` - sample runtime configuration
 - `systemd/templates/` - rendered service unit templates
-- `systemd/user/` - static user units such as `ydotoold.service` and `stt.target`
+- `systemd/user/` - static user units such as `ydotoold.service` and `speech.target`
 - `docs/` - setup and reference documentation
 - `scripts/common.sh` - launcher detection shared by helper scripts
 - `scripts/check.sh` - environment and dependency checks
@@ -100,11 +100,17 @@ Then review the main setup guide:
 docs/local-voice-setup.md
 ```
 
+Relevant focused setup docs:
+
+- `docs/kokoro-tts-setup.md` - Kokoro clone, model prep, venv notes, and TTS service details
+- `docs/whisper-stt-setup.md` - whisper.cpp build, model download, dictation, and speech target details
+
 ## Notes
 
-- STT services are grouped under `stt.target`
+- Speech services are grouped under `speech.target`
 - `ydotoold` uses `%t/ydotool.sock`
 - Dictation reads `LOCAL_SPEECH_KEYBOARD_DEVICE` from `~/.config/local-speech/dictation.env`
+- Whisper port defaults to `5555` and can be overridden with `LOCAL_SPEECH_WHISPER_PORT`
 - `scripts/install.sh` renders units using the actual clone path of the repo
 - The installer and helper scripts prefer plain `uv` when available and fall back to `mise exec uv -- ...`
 - Current recommended Whisper model for 4 GB VRAM systems is `small.en`

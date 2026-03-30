@@ -1,5 +1,5 @@
 [Unit]
-Description=Local speech-to-text stack
+Description=Local speech stack
 Wants=whisper.service ydotoold.service dictation.service
 After=graphical-session.target
 

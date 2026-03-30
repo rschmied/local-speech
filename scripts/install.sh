@@ -60,7 +60,8 @@ chmod 0644 "$UNIT_DIR/whisper.service"
 install -m 0644 "$ROOT_DIR/systemd/user/ydotoold.service" "$UNIT_DIR/ydotoold.service"
 render_template "$ROOT_DIR/systemd/templates/dictation.service.in" "$UNIT_DIR/dictation.service"
 chmod 0644 "$UNIT_DIR/dictation.service"
-install -m 0644 "$ROOT_DIR/systemd/user/stt.target" "$UNIT_DIR/stt.target"
+rm -f "$UNIT_DIR/stt.target"
+install -m 0644 "$ROOT_DIR/systemd/user/speech.target" "$UNIT_DIR/speech.target"
 render_template "$ROOT_DIR/systemd/templates/kokoro-tts.service.in" "$UNIT_DIR/kokoro-tts.service"
 chmod 0644 "$UNIT_DIR/kokoro-tts.service"
 
@@ -97,8 +98,8 @@ Wrote ~/.config/local-speech/install.env with repo path metadata.
 
 Next steps:
   ./scripts/select-device.sh   # if you skipped selection above
-  systemctl --user enable --now stt.target
-  systemctl --user status stt.target whisper ydotoold dictation
+  systemctl --user enable --now speech.target
+  systemctl --user status speech.target whisper ydotoold dictation
 
 Optional:
   systemctl --user start kokoro-tts

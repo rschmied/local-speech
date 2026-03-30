@@ -16,7 +16,7 @@ RIGHT_CTRL held
 RIGHT_CTRL released
   └─ stop/close mic stream
   └─ WAV written to tmpfile (16kHz, mono, 16-bit PCM)
-  └─ POST → whisper-server (CUDA, small.en) → localhost:8080
+  └─ POST → whisper-server (CUDA, small.en) → localhost:5555
   └─ ~200–400ms inference on RTX A1000
   └─ ydotool type → focused window (works system-wide on X11 and Wayland)
   └─ notify-send feedback notifications
@@ -26,7 +26,7 @@ Three background services, one Python script:
 
 | Service | Role |
 |---|---|
-| `whisper.service` | whisper-server, CUDA, localhost:8080 |
+| `whisper.service` | whisper-server, CUDA, localhost:5555 |
 | `ydotoold.service` | synthetic input daemon |
 | `dictation.service` | hotkey watcher + orchestration script |
 
@@ -169,7 +169,7 @@ Description=whisper.cpp STT server (CUDA)
 ExecStart=/absolute/path/to/local-speech/whisper.cpp/build/bin/whisper-server \
   --model /absolute/path/to/local-speech/whisper.cpp/models/ggml-small.en.bin \
   --host 127.0.0.1 \
-  --port 8080 \
+  --port 5555 \
   --convert \
   --inference-path "/v1/audio/transcriptions"
 Restart=on-failure
@@ -180,21 +180,21 @@ WantedBy=default.target
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now whisper
+systemctl --user enable --now speech.target
 ```
 
 **✓ Verify this step:**
 ```bash
-# Service should show active (running)
-systemctl --user status whisper
+# Service and target should show active (running)
+systemctl --user status speech.target whisper
 
 # HTTP endpoint alive check — 404 means wrong path, 400/405 means server is up
 curl -s -o /dev/null -w "%{http_code}" \
-  http://localhost:8080/v1/audio/transcriptions
+  http://localhost:5555/v1/audio/transcriptions
 # → 400 or 405 (not 404)
 
 # Full HTTP round-trip using the smoke WAV from step 3
-curl http://localhost:8080/v1/audio/transcriptions \
+curl http://localhost:5555/v1/audio/transcriptions \
   -F file=@/tmp/smoke.wav \
   -F model=whisper-1 \
   -F response_format="json" | jq .
@@ -246,7 +246,7 @@ systemctl --user cat ydotoold 2>/dev/null || echo "UNIT MISSING"
 [Unit]
 Description=ydotool input automation daemon
 After=graphical-session.target
-PartOf=stt.target
+PartOf=speech.target
 
 [Service]
 ExecStart=/usr/bin/ydotoold --socket %t/ydotool.sock
@@ -254,12 +254,12 @@ Restart=on-failure
 RestartSec=1s
 
 [Install]
-WantedBy=stt.target
+WantedBy=speech.target
 ```
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now stt.target
+systemctl --user enable --now speech.target
 ```
 
 ### 5d — Set YDOTOOL_SOCKET in your shell
@@ -309,6 +309,7 @@ cd "$REPO_ROOT"
 ```
 
 This writes the chosen keyboard path to `~/.config/local-speech/dictation.env` as `LOCAL_SPEECH_KEYBOARD_DEVICE`.
+The same file also carries `LOCAL_SPEECH_WHISPER_PORT`, which defaults to `5555`.
 
 **✓ Verify this step:**
 ```bash
@@ -365,7 +366,7 @@ DEVICE_ENV_VAR = "LOCAL_SPEECH_KEYBOARD_DEVICE"
 DEFAULT_DEVICE_ID = "YOUR-KEYBOARD-BY-ID-NAME-HERE"
 DEFAULT_DEVICE = f"/dev/input/by-id/{DEFAULT_DEVICE_ID}"
 HOTKEY = evdev.ecodes.KEY_RIGHTCTRL
-WHISPER = "http://localhost:8080/v1/audio/transcriptions"
+WHISPER = "http://localhost:5555/v1/audio/transcriptions"
 RATE = 16000
 EXIT_KEY = evdev.ecodes.KEY_ESC  # or KEY_Q, whatever you prefer
 # ─────────────────────────────────────────────────────────────────────────────
@@ -611,13 +612,13 @@ except KeyboardInterrupt:
 
 ## Step 8 — Dictation systemd unit
 
-Once the script works interactively, promote the whole STT stack to a persistent target.
+Once the script works interactively, promote the whole speech stack to a persistent target.
 The target manages `whisper.service`, `ydotoold.service`, and `dictation.service` together.
 
 ```ini
-# ~/.config/systemd/user/stt.target
+# ~/.config/systemd/user/speech.target
 [Unit]
-Description=Local speech-to-text stack
+Description=Local speech stack
 Wants=whisper.service ydotoold.service dictation.service
 After=graphical-session.target
 
@@ -630,7 +631,7 @@ WantedBy=default.target
 [Unit]
 Description=Whisper hotkey dictation
 After=whisper.service ydotoold.service
-PartOf=stt.target
+PartOf=speech.target
 
 [Service]
 EnvironmentFile=-%h/.config/local-speech/dictation.env
@@ -640,37 +641,37 @@ Restart=on-failure
 RestartSec=2
 
 [Install]
-WantedBy=stt.target
+WantedBy=speech.target
 ```
 
 ```ini
 # ~/.config/systemd/user/whisper.service
 [Unit]
 Description=whisper.cpp STT server (CUDA)
-PartOf=stt.target
+PartOf=speech.target
 
 [Service]
 ExecStart=/absolute/path/to/local-speech/whisper.cpp/build/bin/whisper-server \
   --model /absolute/path/to/local-speech/whisper.cpp/models/ggml-small.en.bin \
   --host 127.0.0.1 \
-  --port 8080 \
+  --port 5555 \
   --convert \
   --inference-path "/v1/audio/transcriptions"
 Restart=on-failure
 
 [Install]
-WantedBy=stt.target
+WantedBy=speech.target
 ```
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now stt.target
+systemctl --user enable --now speech.target
 ```
 
 **✓ Verify this step:**
 ```bash
 # Target and all three services should show active
-systemctl --user status stt.target whisper ydotoold dictation
+systemctl --user status speech.target whisper ydotoold dictation
 
 # Live log — hold key, watch events flow through
 journalctl --user -fu dictation
@@ -683,14 +684,12 @@ journalctl --user -fu dictation
 
 ## Feedback UX
 
-Three notification states visible in the corner of the screen:
+Two notification states visible in the corner of the screen:
 
 | Event | Notification | Urgency |
 |---|---|---|
 | Key down | Recording started | normal |
 | Key up | Recording stopped | normal |
-| Done | ✓ first 60 chars of text | normal, auto-dismiss |
-| Error | ⚠ message | critical |
 
 ---
 
@@ -738,6 +737,7 @@ To improve accuracy: switch to `large-v3` if you can spare the VRAM. To keep Kok
 
 **whisper-server returns 404**
 - Missing `--inference-path "/v1/audio/transcriptions"` in the service unit
+- If you changed ports, confirm `LOCAL_SPEECH_WHISPER_PORT` matches the service and client side
 - Restart after updating: `systemctl --user restart whisper`
 
 **whisper-server not using GPU**

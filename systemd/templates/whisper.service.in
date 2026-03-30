@@ -1,16 +1,17 @@
 # ~/.config/systemd/user/whisper.service
 [Unit]
 Description=whisper.cpp STT server (CUDA)
-PartOf=stt.target
+PartOf=speech.target
 
 [Service]
+EnvironmentFile=-%h/.config/local-speech/dictation.env
 ExecStart="__LOCAL_SPEECH_ROOT__/whisper.cpp/build/bin/whisper-server" \
   --model "__LOCAL_SPEECH_ROOT__/whisper.cpp/models/ggml-small.en.bin" \
   --host 127.0.0.1 \
-  --port 8080 \
+  --port ${LOCAL_SPEECH_WHISPER_PORT:-5555} \
   --convert \
   --inference-path "/v1/audio/transcriptions"
 Restart=on-failure
 
 [Install]
-WantedBy=stt.target
+WantedBy=speech.target

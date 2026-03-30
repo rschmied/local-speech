@@ -5,7 +5,7 @@ This guide combines the local Kokoro TTS and whisper.cpp dictation setup for a `
 Both services run fully local, use the existing NVIDIA/CUDA stack, and expose simple localhost APIs:
 
 - Kokoro TTS: `http://localhost:8880/v1/audio/speech`
-- Whisper STT: `http://localhost:8080/v1/audio/transcriptions`
+- Whisper STT: `http://localhost:5555/v1/audio/transcriptions` by default
 
 Shared assumptions:
 
@@ -276,7 +276,7 @@ This setup gives you a local dictation workflow:
 
 The STT side consists of three user services:
 
-- `whisper.service` - local whisper.cpp server on port `8080`
+- `whisper.service` - local whisper.cpp server on port `5555` by default
 - `ydotoold.service` - input injection daemon
 - `dictation.service` - hotkey watcher and orchestration script
 
@@ -334,26 +334,26 @@ The installer renders this unit using your actual clone path:
 # ~/.config/systemd/user/whisper.service
 [Unit]
 Description=whisper.cpp STT server (CUDA)
-PartOf=stt.target
+PartOf=speech.target
 
 [Service]
 ExecStart=/absolute/path/to/local-speech/whisper.cpp/build/bin/whisper-server \
   --model /absolute/path/to/local-speech/whisper.cpp/models/ggml-small.en.bin \
   --host 127.0.0.1 \
-  --port 8080 \
+  --port 5555 \
   --convert \
   --inference-path "/v1/audio/transcriptions"
 Restart=on-failure
 
 [Install]
-WantedBy=stt.target
+WantedBy=speech.target
 ```
 
-Load and start the STT target:
+Load and start the speech target:
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now stt.target
+systemctl --user enable --now speech.target
 ```
 
 Verify:
@@ -362,10 +362,10 @@ Verify:
 systemctl --user status whisper
 
 curl -s -o /dev/null -w "%{http_code}" \
-  http://localhost:8080/v1/audio/transcriptions
+  http://localhost:5555/v1/audio/transcriptions
 # Expected: 400 or 405, not 404
 
-curl http://localhost:8080/v1/audio/transcriptions \
+curl http://localhost:5555/v1/audio/transcriptions \
   -F file=@/tmp/smoke.wav \
   -F model=whisper-1 \
   -F response_format=json | jq .
@@ -403,7 +403,7 @@ Current user unit:
 [Unit]
 Description=ydotool input automation daemon
 After=graphical-session.target
-PartOf=stt.target
+PartOf=speech.target
 
 [Service]
 ExecStart=/usr/bin/ydotoold --socket %t/ydotool.sock
@@ -411,14 +411,14 @@ Restart=on-failure
 RestartSec=1s
 
 [Install]
-WantedBy=stt.target
+WantedBy=speech.target
 ```
 
-Start it through the STT target:
+Start it through the speech target:
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now stt.target
+systemctl --user enable --now speech.target
 ```
 
 #### 4d - Export the socket path
@@ -465,7 +465,7 @@ Important script settings:
 
 - keyboard device path from `LOCAL_SPEECH_KEYBOARD_DEVICE`
 - hotkey, currently `KEY_RIGHTCTRL`
-- Whisper URL, currently `http://localhost:8080/v1/audio/transcriptions`
+- Whisper URL, default `http://localhost:5555/v1/audio/transcriptions`, configurable via `LOCAL_SPEECH_WHISPER_PORT`
 
 Run it directly first:
 
@@ -474,14 +474,14 @@ Run it directly first:
 ```
 
 
-### Step 5a - Add a combined STT target
+### Step 5a - Add a combined speech target
 
-Use this target to manage the whole speech-to-text stack together:
+Use this target to manage the speech stack together:
 
 ```ini
-# ~/.config/systemd/user/stt.target
+# ~/.config/systemd/user/speech.target
 [Unit]
-Description=Local speech-to-text stack
+Description=Local speech stack
 Wants=whisper.service ydotoold.service dictation.service
 After=graphical-session.target
 
@@ -498,7 +498,7 @@ The installer renders this unit using your actual clone path and either plain `u
 [Unit]
 Description=Whisper hotkey dictation
 After=whisper.service ydotoold.service
-PartOf=stt.target
+PartOf=speech.target
 
 [Service]
 EnvironmentFile=-%h/.config/local-speech/dictation.env
@@ -508,20 +508,20 @@ Restart=on-failure
 RestartSec=2
 
 [Install]
-WantedBy=stt.target
+WantedBy=speech.target
 ```
 
-Load and start the STT target:
+Load and start the speech target:
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now stt.target
+systemctl --user enable --now speech.target
 ```
 
-Verify all STT services:
+Verify all speech services:
 
 ```bash
-systemctl --user status stt.target whisper ydotoold dictation
+systemctl --user status speech.target whisper ydotoold dictation
 journalctl --user -fu dictation
 ```
 
@@ -530,7 +530,7 @@ journalctl --user -fu dictation
 With all three services running:
 
 ```bash
-systemctl --user status stt.target whisper ydotoold dictation
+systemctl --user status speech.target whisper ydotoold dictation
 ```
 
 Then test the live flow:
@@ -544,7 +544,7 @@ Then test the live flow:
 Useful checks if something is wrong:
 
 ```bash
-curl -s http://localhost:8080/v1/audio/transcriptions
+curl -s http://localhost:5555/v1/audio/transcriptions
 journalctl --user -fu whisper
 journalctl --user -fu dictation
 systemctl --user status ydotoold
@@ -557,6 +557,7 @@ systemctl --user status ydotoold
 - If `ydotoold` fails with `failed to open uinput device`, re-check the udev rule and `/dev/uinput` permissions
 - If `ydotool type` does nothing, confirm the daemon is running and `YDOTOOL_SOCKET=$XDG_RUNTIME_DIR/ydotool.sock`
 - If Whisper returns `404`, the service is missing `--inference-path "/v1/audio/transcriptions"`
+- If Whisper is listening on a non-default port, update `LOCAL_SPEECH_WHISPER_PORT` in `~/.config/local-speech/dictation.env`
 - If the hotkey is never detected, rerun `./scripts/select-device.sh` and restart `dictation.service`
 
 ## Links

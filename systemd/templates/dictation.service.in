@@ -2,7 +2,7 @@
 [Unit]
 Description=Whisper hotkey dictation
 After=whisper.service ydotoold.service
-PartOf=stt.target
+PartOf=speech.target
 
 [Service]
 EnvironmentFile=-%h/.config/local-speech/dictation.env
@@ -12,4 +12,4 @@ Restart=on-failure
 RestartSec=2
 
 [Install]
-WantedBy=stt.target
+WantedBy=speech.target

@@ -91,7 +91,7 @@ for rel in \
   systemd/templates/kokoro-tts.service.in \
   bin/say4 \
   systemd/user/ydotoold.service \
-  systemd/user/stt.target \
+  systemd/user/speech.target \
   docs/local-voice-setup.md
 do
   if [ -e "$ROOT_DIR/$rel" ]; then

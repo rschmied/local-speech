@@ -35,12 +35,12 @@ from scipy.io.wavfile import write as wav_write
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DEVICE_ENV_VAR = "LOCAL_SPEECH_KEYBOARD_DEVICE"
+WHISPER_PORT_ENV_VAR = "LOCAL_SPEECH_WHISPER_PORT"
 DEFAULT_DEVICE_ID = "YOUR-KEYBOARD-BY-ID-NAME-HERE"
 DEFAULT_DEVICE = f"/dev/input/by-id/{DEFAULT_DEVICE_ID}"
 HOTKEY = evdev.ecodes.KEY_RIGHTCTRL
-WHISPER = "http://localhost:8080/v1/audio/transcriptions"
+DEFAULT_WHISPER_PORT = "5555"
 RATE = 16000
-EXIT_KEY = evdev.ecodes.KEY_ESC  # or KEY_Q, whatever you prefer
 # ─────────────────────────────────────────────────────────────────────────────
 
 recording = False
@@ -78,6 +78,14 @@ def resolve_device_path(cli_value: str | None) -> str:
         )
 
     return device_path
+
+
+def resolve_whisper_url() -> str:
+    port = (
+        os.environ.get(WHISPER_PORT_ENV_VAR, DEFAULT_WHISPER_PORT).strip()
+        or DEFAULT_WHISPER_PORT
+    )
+    return f"http://localhost:{port}/v1/audio/transcriptions"
 
 
 def notify(msg: str) -> None:
@@ -218,10 +226,10 @@ signal.signal(signal.SIGTERM, shutdown)
 signal.signal(signal.SIGINT, shutdown)
 
 DEVICE = resolve_device_path(args.device)
+WHISPER = resolve_whisper_url()
 dev = evdev.InputDevice(DEVICE)
 
 try:
-    # dev.grab()  # exclusive grab — prevents hotkey firing system shortcuts while held
     print(
         f"Dictation ready. Hold {evdev.ecodes.KEY[HOTKEY]} to record. device={DEVICE}"
     )
@@ -229,10 +237,10 @@ try:
     for event in dev.read_loop():
         if event.type != evdev.ecodes.EV_KEY:
             continue
+
         key = evdev.categorize(event)
-        # # Exit on ESC (since keyboard is grabbed, Ctrl-C can't reach us)
-        # if key.scancode == EXIT_KEY and key.keystate == key.key_down:
-        #     shutdown()
+        if type(key) is not evdev.KeyEvent:
+            continue
 
         if key.scancode != HOTKEY:
             continue
@@ -249,10 +257,3 @@ try:
 
 except KeyboardInterrupt:
     shutdown()
-
-# finally:
-#     # Fallback: ensure grab is always released even on unexpected exceptions
-#     try:
-#         dev.ungrab()
-#     except Exception:
-#         pass
