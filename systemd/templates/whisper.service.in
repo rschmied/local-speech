@@ -4,11 +4,12 @@ Description=whisper.cpp STT server (CUDA)
 PartOf=speech.target
 
 [Service]
+Environment=LOCAL_SPEECH_WHISPER_PORT=5555
 EnvironmentFile=-%h/.config/local-speech/dictation.env
 ExecStart="__LOCAL_SPEECH_ROOT__/whisper.cpp/build/bin/whisper-server" \
   --model "__LOCAL_SPEECH_ROOT__/whisper.cpp/models/ggml-small.en.bin" \
   --host 127.0.0.1 \
-  --port ${LOCAL_SPEECH_WHISPER_PORT:-5555} \
+  --port ${LOCAL_SPEECH_WHISPER_PORT} \
   --convert \
   --inference-path "/v1/audio/transcriptions"
 Restart=on-failure

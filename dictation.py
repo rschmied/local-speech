@@ -48,6 +48,8 @@ frames: list = []
 dev: evdev.InputDevice | None = None
 stream: sd.InputStream | None = None
 state_lock = threading.Lock()
+notify_lock = threading.Lock()
+notification_id: str | None = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -89,11 +91,40 @@ def resolve_whisper_url() -> str:
 
 
 def notify(msg: str) -> None:
-    subprocess.Popen(
-        ["notify-send", "--expire-time", "2000", "--transient", "Dictation", msg],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    global notification_id
+
+    command = [
+        "notify-send",
+        "--icon",
+        "audio-input-microphone",
+        "--expire-time",
+        "2000",
+        "--transient",
+        "--print-id",
+    ]
+
+    with notify_lock:
+        if notification_id is not None:
+            command.extend(["--replace-id", notification_id])
+
+        command.extend(["Dictation", msg])
+
+        try:
+            result = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except Exception:
+            return
+
+        if result.returncode != 0:
+            return
+
+        new_id = result.stdout.strip()
+        if new_id:
+            notification_id = new_id
 
 
 def shutdown(sig=None, frame=None) -> None:
