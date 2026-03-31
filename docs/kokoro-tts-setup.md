@@ -231,21 +231,15 @@ If you instead see `ModuleNotFoundError` during startup right after recreating `
 
 The installer renders this unit using your actual clone path, and uses either plain `uv` or `mise`-managed `uv` depending on what is available.
 
-```ini
-# ~/.config/systemd/user/kokoro-tts.service
-[Unit]
-Description=Kokoro TTS server (GPU)
-After=network.target
+Canonical source for this unit: `systemd/templates/kokoro-tts.service.in`
 
-[Service]
-ExecStart=/usr/bin/env bash /absolute/path/to/local-speech/Kokoro-FastAPI/start-gpu.sh
-WorkingDirectory=/absolute/path/to/local-speech/Kokoro-FastAPI
-Restart=on-failure
-RestartSec=5
-Environment=HOME=%h
+`scripts/install.sh` renders that template into `~/.config/systemd/user/kokoro-tts.service` using your actual repo path.
 
-[Install]
-WantedBy=default.target
+Inspect the template source and installed result with:
+
+```bash
+sed -n '1,160p' systemd/templates/kokoro-tts.service.in
+systemctl --user cat kokoro-tts
 ```
 
 ```bash

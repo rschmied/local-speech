@@ -92,7 +92,8 @@ for rel in \
   bin/say4 \
   systemd/user/ydotoold.service \
   systemd/user/speech.target \
-  docs/local-voice-setup.md
+  docs/whisper-stt-setup.md \
+  docs/kokoro-tts-setup.md
 do
   if [ -e "$ROOT_DIR/$rel" ]; then
     pass "repo file present: $rel"

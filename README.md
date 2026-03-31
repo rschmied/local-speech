@@ -15,12 +15,12 @@ service units, target unit, and documentation in one place.
 - `which-device.py` - interactive keyboard selector that writes runtime config
 - `bin/say4` - local TTS playback helper
 - `config/dictation.env.example` - sample runtime configuration
-- `systemd/templates/` - rendered service unit templates
-- `systemd/user/` - static user units such as `ydotoold.service` and `speech.target`
+- `systemd/templates/` - canonical service unit templates rendered at install time
+- `systemd/user/` - canonical static user units such as `ydotoold.service` and `speech.target`
 - `docs/` - setup and reference documentation
 - `scripts/common.sh` - launcher detection shared by helper scripts
 - `scripts/check.sh` - environment and dependency checks
-- `scripts/install.sh` - install units into `~/.config/systemd/user`
+- `scripts/install.sh` - render/copy canonical repo units into `~/.config/systemd/user`
 - `scripts/select-device.sh` - launch the interactive keyboard selector with detected tooling
 - `scripts/run-dictation.sh` - launch dictation with detected tooling
 - `scripts/uninstall.sh` - remove installed units and helper script
@@ -94,13 +94,7 @@ Remove installed assets later if needed:
 ./scripts/uninstall.sh
 ```
 
-Then review the main setup guide:
-
-```text
-docs/local-voice-setup.md
-```
-
-Relevant focused setup docs:
+Focused setup docs:
 
 - `docs/kokoro-tts-setup.md` - Kokoro clone, model prep, venv notes, and TTS service details
 - `docs/whisper-stt-setup.md` - whisper.cpp build, model download, dictation, and speech target details

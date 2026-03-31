@@ -160,22 +160,21 @@ ffmpeg -f lavfi -i anullsrc=r=16000:cl=mono -t 3 -c:a pcm_s16le /tmp/smoke.wav
 > The `--inference-path` flag remaps it to the OpenAI-compatible path so the dictation
 > script works without modification.
 
-```ini
-# ~/.config/systemd/user/whisper.service
-[Unit]
-Description=whisper.cpp STT server (CUDA)
+Canonical source for this unit: `systemd/templates/whisper.service.in`
 
-[Service]
-ExecStart=/absolute/path/to/local-speech/whisper.cpp/build/bin/whisper-server \
-  --model /absolute/path/to/local-speech/whisper.cpp/models/ggml-small.en.bin \
-  --host 127.0.0.1 \
-  --port 5555 \
-  --convert \
-  --inference-path "/v1/audio/transcriptions"
-Restart=on-failure
+The installer renders that template into `~/.config/systemd/user/whisper.service` using your
+actual repo path. Important behaviors from the template:
 
-[Install]
-WantedBy=default.target
+- joins `speech.target` via `PartOf=speech.target`
+- reads `LOCAL_SPEECH_WHISPER_PORT` from `~/.config/local-speech/dictation.env`
+- binds `whisper-server` to `127.0.0.1`
+- remaps the endpoint to `/v1/audio/transcriptions`
+
+Inspect the template source and installed result any time with:
+
+```bash
+sed -n '1,160p' systemd/templates/whisper.service.in
+systemctl --user cat whisper
 ```
 
 ```bash
@@ -231,7 +230,7 @@ sudo usermod -aG input $USER
 
 **Log out and back in before continuing** — group membership is only picked up at login.
 
-### 5c — Create the service unit
+### 5c — Ensure the service unit exists
 
 The apt package may or may not have installed a user service unit. Check first:
 
@@ -239,22 +238,14 @@ The apt package may or may not have installed a user service unit. Check first:
 systemctl --user cat ydotoold 2>/dev/null || echo "UNIT MISSING"
 ```
 
-**If the unit is missing** (shows `UNIT MISSING`): create it manually:
+If the unit is missing, this repo already carries the canonical unit at `systemd/user/ydotoold.service`.
+`scripts/install.sh` copies it into `~/.config/systemd/user/ydotoold.service` for you.
 
-```ini
-# ~/.config/systemd/user/ydotoold.service
-[Unit]
-Description=ydotool input automation daemon
-After=graphical-session.target
-PartOf=speech.target
+You can inspect the repo source and installed result directly:
 
-[Service]
-ExecStart=/usr/bin/ydotoold --socket %t/ydotool.sock
-Restart=on-failure
-RestartSec=1s
-
-[Install]
-WantedBy=speech.target
+```bash
+sed -n '1,120p' systemd/user/ydotoold.service
+systemctl --user cat ydotoold
 ```
 
 ```bash
@@ -320,271 +311,25 @@ grep '^LOCAL_SPEECH_KEYBOARD_DEVICE=' ~/.config/local-speech/dictation.env
 
 ## Step 7 — Dictation script
 
-Save into your cloned repo as `dictation.py`:
+Use the repo copy at `dictation.py`; do not maintain a second pasted copy in the docs.
 
-The script uses [PEP 723](https://peps.python.org/pep-0723/) inline metadata so `uv` can
-manage dependencies automatically — no manual `pip install` needed.
+The script uses [PEP 723](https://peps.python.org/pep-0723/) inline metadata, so `uv` resolves runtime dependencies automatically.
 
-```python
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#   "evdev",
-#   "sounddevice",
-#   "scipy",
-#   "requests",
-#   "numpy",
-# ]
-# ///
-"""
-dictation.py — hold RIGHT_CTRL to record, release to transcribe and type.
+Current implementation notes:
 
-Usage:  uv run dictation.py [--device /dev/input/by-id/...]
-        chmod +x dictation.py && ./dictation.py [--device /dev/input/by-id/...]
+- dependencies are `evdev`, `sounddevice`, and `requests`
+- the recorder uses `sounddevice.RawInputStream`, not `InputStream`, to avoid the indirect NumPy runtime requirement in the array callback path
+- captured PCM frames are buffered as raw bytes and written to a temporary WAV with Python's built-in `wave` module
+- the Whisper endpoint is built from `LOCAL_SPEECH_WHISPER_PORT`, defaulting to `5555`
+- transcription output is normalized before typing so multiline responses do not inject literal Enter keypresses into the focused app
 
-Requires: ydotoold running, user in 'input' group, YDOTOOL_SOCKET set
-Works on both X11 and Wayland.
-"""
+Key runtime knobs in the current script:
 
-import argparse
-import os
-import signal
-import subprocess
-import sys
-import tempfile
-import threading
-
-import evdev
-import numpy
-import requests
-import sounddevice as sd
-from scipy.io.wavfile import write as wav_write
-
-# ── Config ────────────────────────────────────────────────────────────────────
-DEVICE_ENV_VAR = "LOCAL_SPEECH_KEYBOARD_DEVICE"
-DEFAULT_DEVICE_ID = "YOUR-KEYBOARD-BY-ID-NAME-HERE"
-DEFAULT_DEVICE = f"/dev/input/by-id/{DEFAULT_DEVICE_ID}"
-HOTKEY = evdev.ecodes.KEY_RIGHTCTRL
-WHISPER = "http://localhost:5555/v1/audio/transcriptions"
-RATE = 16000
-EXIT_KEY = evdev.ecodes.KEY_ESC  # or KEY_Q, whatever you prefer
-# ─────────────────────────────────────────────────────────────────────────────
-
-recording = False
-frames: list = []
-dev: evdev.InputDevice | None = None
-stream: sd.InputStream | None = None
-state_lock = threading.Lock()
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--device",
-        help=f"Keyboard device path. Overrides ${DEVICE_ENV_VAR} if set.",
-    )
-    return parser.parse_args()
-
-
-args = parse_args()
-
-
-def resolve_device_path(cli_value: str | None) -> str:
-    device_path = (
-        cli_value or os.environ.get(DEVICE_ENV_VAR, "")
-    ).strip() or DEFAULT_DEVICE
-
-    if "YOUR-KEYBOARD-BY-ID-NAME-HERE" in device_path:
-        raise SystemExit(
-            f"No keyboard device configured. Set {DEVICE_ENV_VAR} or run ./which-device.py."
-        )
-
-    if not os.path.exists(device_path):
-        raise SystemExit(
-            f"Keyboard device not found: {device_path}. Update {DEVICE_ENV_VAR} or rerun ./which-device.py."
-        )
-
-    return device_path
-
-
-def notify(msg: str) -> None:
-    subprocess.Popen(
-        ["notify-send", "-t", "2000", "Dictation", msg],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-
-def shutdown(sig=None, frame=None) -> None:
-    """Release keyboard grab and exit cleanly on Ctrl-C or SIGTERM."""
-    global recording, stream
-
-    if dev is not None:
-        try:
-            dev.ungrab()
-        except Exception:
-            pass
-
-    with state_lock:
-        recording = False
-        frames.clear()
-        current_stream = stream
-        stream = None
-
-    if current_stream is not None:
-        try:
-            current_stream.stop()
-        except Exception:
-            pass
-        try:
-            current_stream.close()
-        except Exception:
-            pass
-
-    print("Dictation stopped. Keyboard released.")
-    sys.exit(0)
-
-
-def audio_callback(indata, *_):
-    with state_lock:
-        if recording:
-            frames.append(indata.copy())
-
-
-def open_stream() -> sd.InputStream:
-    new_stream = sd.InputStream(
-        samplerate=RATE,
-        channels=1,
-        dtype="int16",
-        callback=audio_callback,
-    )
-    new_stream.start()
-    return new_stream
-
-
-def start_recording() -> bool:
-    global recording, stream
-
-    with state_lock:
-        if recording:
-            return False
-
-    try:
-        new_stream = open_stream()
-    except Exception as e:
-        print(f"Mic open failed: {e}", file=sys.stderr)
-        return False
-
-    with state_lock:
-        frames.clear()
-        stream = new_stream
-        recording = True
-
-    return True
-
-
-def stop_recording() -> list:
-    global recording, stream
-
-    with state_lock:
-        if not recording:
-            return []
-        recording = False
-        current_stream = stream
-
-    if current_stream is not None:
-        try:
-            current_stream.stop()
-        except Exception:
-            pass
-        try:
-            current_stream.close()
-        except Exception:
-            pass
-
-    with state_lock:
-        captured_frames = list(frames)
-        frames.clear()
-        stream = None
-
-    return captured_frames
-
-
-def transcribe_and_type(captured_frames: list) -> None:
-    notify("Recording stopped")
-
-    if not captured_frames:
-        return
-
-    audio = numpy.concatenate(captured_frames)
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        wav_write(f.name, RATE, audio)
-        try:
-            with open(f.name, "rb") as audio_file:
-                r = requests.post(
-                    WHISPER,
-                    files={"file": audio_file},
-                    data={"model": "whisper-1"},
-                    timeout=30,
-                )
-            text = r.json().get("text", "").strip()
-        except Exception as e:
-            print(f"Transcription error: {e}", file=sys.stderr)
-            return
-
-    if text:
-        # Replace newlines with spaces — don't want Enter keypresses mid-dictation
-        text = text.replace("\n", " ").strip()
-        subprocess.run(
-            ["ydotool", "type", "--key-delay=1", "--", text], stderr=subprocess.DEVNULL
-        )
-
-
-# ── Main ──────────────────────────────────────────────────────────────────────
-signal.signal(signal.SIGTERM, shutdown)
-signal.signal(signal.SIGINT, shutdown)
-
-DEVICE = resolve_device_path(args.device)
-dev = evdev.InputDevice(DEVICE)
-
-try:
-    # dev.grab()  # exclusive grab — prevents hotkey firing system shortcuts while held
-    print(
-        f"Dictation ready. Hold {evdev.ecodes.KEY[HOTKEY]} to record. device={DEVICE}"
-    )
-
-    for event in dev.read_loop():
-        if event.type != evdev.ecodes.EV_KEY:
-            continue
-        key = evdev.categorize(event)
-        # # Exit on ESC (since keyboard is grabbed, Ctrl-C can't reach us)
-        # if key.scancode == EXIT_KEY and key.keystate == key.key_down:
-        #     shutdown()
-
-        if key.scancode != HOTKEY:
-            continue
-
-        if key.keystate == key.key_down and not recording:
-            if start_recording():
-                notify("Recording started")
-
-        elif key.keystate == key.key_up and recording:
-            captured_frames = stop_recording()
-            threading.Thread(
-                target=transcribe_and_type, args=(captured_frames,), daemon=True
-            ).start()
-
-except KeyboardInterrupt:
-    shutdown()
-
-# finally:
-#     # Fallback: ensure grab is always released even on unexpected exceptions
-#     try:
-#         dev.ungrab()
-#     except Exception:
-#         pass
-
+```text
+LOCAL_SPEECH_KEYBOARD_DEVICE  keyboard event device path
+LOCAL_SPEECH_WHISPER_PORT     optional Whisper port override, default 5555
+RIGHT_CTRL                    hold to record, release to transcribe
+16000 Hz mono int16           microphone capture format
 ```
 
 **✓ Verify this step:**
@@ -615,52 +360,26 @@ except KeyboardInterrupt:
 Once the script works interactively, promote the whole speech stack to a persistent target.
 The target manages `whisper.service`, `ydotoold.service`, and `dictation.service` together.
 
-```ini
-# ~/.config/systemd/user/speech.target
-[Unit]
-Description=Local speech stack
-Wants=whisper.service ydotoold.service dictation.service
-After=graphical-session.target
+Canonical repo files for this stack:
 
-[Install]
-WantedBy=default.target
-```
+- `systemd/user/speech.target`
+- `systemd/templates/dictation.service.in`
+- `systemd/templates/whisper.service.in`
+- `systemd/user/ydotoold.service`
 
-```ini
-# ~/.config/systemd/user/dictation.service
-[Unit]
-Description=Whisper hotkey dictation
-After=whisper.service ydotoold.service
-PartOf=speech.target
+`scripts/install.sh` installs or renders these into `~/.config/systemd/user/`.
 
-[Service]
-EnvironmentFile=-%h/.config/local-speech/dictation.env
-Environment=YDOTOOL_SOCKET=%t/ydotool.sock
-ExecStart=/usr/bin/env uv run /absolute/path/to/local-speech/dictation.py
-Restart=on-failure
-RestartSec=2
+Inspect the repo sources and installed units with:
 
-[Install]
-WantedBy=speech.target
-```
-
-```ini
-# ~/.config/systemd/user/whisper.service
-[Unit]
-Description=whisper.cpp STT server (CUDA)
-PartOf=speech.target
-
-[Service]
-ExecStart=/absolute/path/to/local-speech/whisper.cpp/build/bin/whisper-server \
-  --model /absolute/path/to/local-speech/whisper.cpp/models/ggml-small.en.bin \
-  --host 127.0.0.1 \
-  --port 5555 \
-  --convert \
-  --inference-path "/v1/audio/transcriptions"
-Restart=on-failure
-
-[Install]
-WantedBy=speech.target
+```bash
+sed -n '1,120p' systemd/user/speech.target
+sed -n '1,160p' systemd/templates/dictation.service.in
+sed -n '1,160p' systemd/templates/whisper.service.in
+sed -n '1,120p' systemd/user/ydotoold.service
+systemctl --user cat speech.target
+systemctl --user cat dictation
+systemctl --user cat whisper
+systemctl --user cat ydotoold
 ```
 
 ```bash
@@ -739,6 +458,11 @@ To improve accuracy: switch to `large-v3` if you can spare the VRAM. To keep Kok
 - Missing `--inference-path "/v1/audio/transcriptions"` in the service unit
 - If you changed ports, confirm `LOCAL_SPEECH_WHISPER_PORT` matches the service and client side
 - Restart after updating: `systemctl --user restart whisper`
+
+**`Mic open failed: No module named 'numpy'`**
+- You are likely running an older dictation script that still uses `sounddevice.InputStream`
+- The current repo version uses `sounddevice.RawInputStream` specifically to avoid that dependency
+- Re-run from the checked-out repo with `./scripts/run-dictation.sh` and restart `dictation.service` after updating
 
 **whisper-server not using GPU**
 - Verify CUDA compiled in: `grep "GGML_CUDA:BOOL" build/CMakeCache.txt` → should be `1`

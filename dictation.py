@@ -4,9 +4,7 @@
 # dependencies = [
 #   "evdev",
 #   "sounddevice",
-#   "scipy",
 #   "requests",
-#   "numpy",
 # ]
 # ///
 """
@@ -19,6 +17,8 @@ Requires: ydotoold running, user in 'input' group, YDOTOOL_SOCKET set
 Works on both X11 and Wayland.
 """
 
+import re
+
 import argparse
 import os
 import signal
@@ -26,12 +26,11 @@ import subprocess
 import sys
 import tempfile
 import threading
+import wave
 
 import evdev
-import numpy
 import requests
 import sounddevice as sd
-from scipy.io.wavfile import write as wav_write
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DEVICE_ENV_VAR = "LOCAL_SPEECH_KEYBOARD_DEVICE"
@@ -44,9 +43,9 @@ RATE = 16000
 # ─────────────────────────────────────────────────────────────────────────────
 
 recording = False
-frames: list = []
+frames: list[bytes] = []
 dev: evdev.InputDevice | None = None
-stream: sd.InputStream | None = None
+stream: sd.RawInputStream | None = None
 state_lock = threading.Lock()
 notify_lock = threading.Lock()
 notification_id: str | None = None
@@ -160,11 +159,11 @@ def shutdown(sig=None, frame=None) -> None:
 def audio_callback(indata, *_):
     with state_lock:
         if recording:
-            frames.append(indata.copy())
+            frames.append(bytes(indata))
 
 
-def open_stream() -> sd.InputStream:
-    new_stream = sd.InputStream(
+def open_stream() -> sd.RawInputStream:
+    new_stream = sd.RawInputStream(
         samplerate=RATE,
         channels=1,
         dtype="int16",
@@ -195,7 +194,7 @@ def start_recording() -> bool:
     return True
 
 
-def stop_recording() -> list:
+def stop_recording() -> list[bytes]:
     global recording, stream
 
     with state_lock:
@@ -222,15 +221,19 @@ def stop_recording() -> list:
     return captured_frames
 
 
-def transcribe_and_type(captured_frames: list) -> None:
+def transcribe_and_type(captured_frames: list[bytes]) -> None:
     notify("Recording stopped")
 
     if not captured_frames:
         return
 
-    audio = numpy.concatenate(captured_frames)
+    audio = b"".join(captured_frames)
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        wav_write(f.name, RATE, audio)
+        with wave.open(f, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(RATE)
+            wav_file.writeframes(audio)
         try:
             with open(f.name, "rb") as audio_file:
                 r = requests.post(
@@ -245,8 +248,31 @@ def transcribe_and_type(captured_frames: list) -> None:
             return
 
     if text:
-        # Replace newlines with spaces — don't want Enter keypresses mid-dictation
-        text = text.replace("\n", " ").strip()
+        # Variant A
+        # split() without arguments splits by any whitespace (including \n)
+        # and removes empty strings, effectively collapsing multiple spaces.
+        # text = " ".join(text.split()).strip()
+
+        # Variant B
+        # 1. Replace one or more newlines (and surrounding whitespace) with an ellipsis
+        # This turns "Hello\n\nWorld" into "Hello... World"
+        # text = re.sub(r"\s*\n+\s*", " ... ", text).strip()
+
+        # 2. (Optional) Collapse any remaining double spaces elsewhere
+        # text = re.sub(r" +", " ", text)
+
+        # Variant C
+        # 1. Handle protected punctuation: Keep '?' or '!' and just add the ellipsis after.
+        # Logic: If there's a ? or !, keep it (\1) and add the ellipsis.
+        text = re.sub(r"([?!])\s*\n+\s*", r"\1 ... ", text)
+
+        # 2. Handle soft punctuation: Replace '.', ',', or just plain newlines with ellipsis.
+        # Logic: If it's a period/comma/nothing followed by a newline, swap it all for '... '
+        text = re.sub(r"[.,]?\s*\n+\s*", "... ", text)
+
+        # 3. Final polish: Collapse any resulting double spaces
+        text = re.sub(r" +", " ", text).strip()
+
         subprocess.run(
             ["ydotool", "type", "--key-delay=1", "--", text], stderr=subprocess.DEVNULL
         )

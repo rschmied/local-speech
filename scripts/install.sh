@@ -92,7 +92,7 @@ if [ -t 0 ] && [ -t 1 ]; then
 fi
 
 cat <<'EOF'
-Installed rendered user units into ~/.config/systemd/user and copied say4 to ~/bin.
+Installed canonical repo-managed user units into ~/.config/systemd/user and copied say4 to ~/bin.
 Seeded ~/.config/local-speech/dictation.env if it did not already exist.
 Wrote ~/.config/local-speech/install.env with repo path metadata.
 
