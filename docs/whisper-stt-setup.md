@@ -163,7 +163,7 @@ ffmpeg -f lavfi -i anullsrc=r=16000:cl=mono -t 3 -c:a pcm_s16le /tmp/smoke.wav
 Canonical source for this unit: `systemd/templates/whisper.service.in`
 
 The installer renders that template into `~/.config/systemd/user/whisper.service` using your
-actual repo path. Important behaviors from the template:
+actual repo path. For an STT-only install, run `./scripts/install.sh --stt`. Important behaviors from the template:
 
 - joins `speech.target` via `PartOf=speech.target`
 - reads `LOCAL_SPEECH_WHISPER_PORT` from `~/.config/local-speech/dictation.env`
@@ -367,7 +367,7 @@ Canonical repo files for this stack:
 - `systemd/templates/whisper.service.in`
 - `systemd/user/ydotoold.service`
 
-`scripts/install.sh` installs or renders these into `~/.config/systemd/user/`.
+`./scripts/install.sh --stt` installs or renders these into `~/.config/systemd/user/`.
 
 Inspect the repo sources and installed units with:
 
