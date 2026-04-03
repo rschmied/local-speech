@@ -106,5 +106,5 @@ Focused setup docs:
 - Dictation reads `LOCAL_SPEECH_KEYBOARD_DEVICE` from `~/.config/local-speech/dictation.env`
 - Whisper port defaults to `5555` and can be overridden with `LOCAL_SPEECH_WHISPER_PORT`
 - `scripts/install.sh` renders units using the actual clone path of the repo
-- The installer and helper scripts prefer plain `uv` when available and fall back to `mise exec uv -- ...`
+- The installer and helper scripts prefer `/usr/bin/mise exec uv -- ...` and fall back to plain `uv` only if needed
 - Current recommended Whisper model for 4 GB VRAM systems is `small.en`

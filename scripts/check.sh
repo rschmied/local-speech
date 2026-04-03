@@ -42,9 +42,9 @@ check_cmd nvcc "nvcc"
 if command -v uv >/dev/null 2>&1; then
   pass "uv: $(command -v uv)"
 elif local_speech_detect_launchers >/dev/null 2>&1; then
-  pass "uv available via mise"
+  pass "uv available via /usr/bin/mise"
 else
-  warn "uv unavailable, and mise could not provide it"
+  warn "uv unavailable, and /usr/bin/mise could not provide it"
 fi
 
 if command -v mise >/dev/null 2>&1; then

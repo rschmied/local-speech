@@ -17,10 +17,9 @@ Requires: ydotoold running, user in 'input' group, YDOTOOL_SOCKET set
 Works on both X11 and Wayland.
 """
 
-import re
-
 import argparse
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -251,7 +250,7 @@ def transcribe_and_type(captured_frames: list[bytes]) -> None:
         # Variant A
         # split() without arguments splits by any whitespace (including \n)
         # and removes empty strings, effectively collapsing multiple spaces.
-        # text = " ".join(text.split()).strip()
+        text = " ".join(text.split()).strip()
 
         # Variant B
         # 1. Replace one or more newlines (and surrounding whitespace) with an ellipsis
@@ -264,14 +263,14 @@ def transcribe_and_type(captured_frames: list[bytes]) -> None:
         # Variant C
         # 1. Handle protected punctuation: Keep '?' or '!' and just add the ellipsis after.
         # Logic: If there's a ? or !, keep it (\1) and add the ellipsis.
-        text = re.sub(r"([?!])\s*\n+\s*", r"\1 ... ", text)
+        # text = re.sub(r"([?!])\s*\n+\s*", r"\1 ... ", text)
 
         # 2. Handle soft punctuation: Replace '.', ',', or just plain newlines with ellipsis.
         # Logic: If it's a period/comma/nothing followed by a newline, swap it all for '... '
-        text = re.sub(r"[.,]?\s*\n+\s*", "... ", text)
+        # text = re.sub(r"[.,]?\s*\n+\s*", "... ", text)
 
         # 3. Final polish: Collapse any resulting double spaces
-        text = re.sub(r" +", " ", text).strip()
+        # text = re.sub(r" +", " ", text).strip()
 
         subprocess.run(
             ["ydotool", "type", "--key-delay=1", "--", text], stderr=subprocess.DEVNULL

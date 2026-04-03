@@ -229,7 +229,7 @@ If you instead see `ModuleNotFoundError` during startup right after recreating `
 > **Do not use `--now` or `enable` here** — the service is managed on demand,
 > not started at boot. See the on-demand section above.
 
-The installer renders this unit using your actual clone path, and uses either plain `uv` or `mise`-managed `uv` depending on what is available.
+The installer renders this unit using your actual clone path and prefers `/usr/bin/mise exec uv -- ...` for stable systemd execution.
 
 Canonical source for this unit: `systemd/templates/kokoro-tts.service.in`
 
