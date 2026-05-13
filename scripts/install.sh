@@ -21,7 +21,7 @@ render_template() {
   local src="$1"
   local dest="$2"
 
-  python3 - "$src" "$dest" "$ROOT_DIR" "$DICTATION_EXEC" "$KOKORO_EXEC" <<'PY'
+  python3 - "$src" "$dest" "$ROOT_DIR" "$DICTATION_EXEC" "$KOKORO_EXEC" "$PATH_LINE" <<'PY'
 from pathlib import Path
 import sys
 
@@ -30,11 +30,17 @@ dest = Path(sys.argv[2])
 root = sys.argv[3]
 dictation_exec = sys.argv[4]
 kokoro_exec = sys.argv[5]
+path_line = sys.argv[6]
 
 text = src.read_text()
 text = text.replace("__LOCAL_SPEECH_ROOT__", root)
 text = text.replace("__DICTATION_EXEC__", dictation_exec)
 text = text.replace("__KOKORO_EXEC__", kokoro_exec)
+# __PATH_LINE__ expands to a full Environment= line, or is removed (with its newline) if empty
+if path_line:
+    text = text.replace("__PATH_LINE__\n", path_line + "\n")
+else:
+    text = text.replace("__PATH_LINE__\n", "")
 dest.write_text(text)
 PY
 }

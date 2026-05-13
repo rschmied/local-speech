@@ -88,8 +88,13 @@ any container overhead.
 These should already be present from the whisper.cpp setup:
 
 - CUDA toolkit + NVIDIA driver (verified via `nvidia-smi`)
-- `mise` at `/usr/bin/mise` with `uv` available
+- `mise` (any install location) with `uv` available via `mise exec uv -- uv --version`
 - `git`
+
+> **Note:** `mise` + `uv` are required for the systemd service. `start-gpu.sh` calls
+> `uv` directly, and systemd runs with a minimal `PATH`. The installer detects the
+> actual `mise` location at install time and bakes a correct `PATH=` line into the
+> generated unit. A plain `uv`-only setup will not work reliably as a service.
 
 Additional dependency needed by Kokoro for phoneme fallback on unknown words:
 
@@ -229,7 +234,7 @@ If you instead see `ModuleNotFoundError` during startup right after recreating `
 > **Do not use `--now` or `enable` here** — the service is managed on demand,
 > not started at boot. See the on-demand section above.
 
-The installer renders this unit using your actual clone path and prefers `/usr/bin/mise exec uv -- ...` for stable systemd execution. For a TTS-only install, run `./scripts/install.sh --tts`.
+The installer renders this unit using your actual clone path and detected `mise` location for stable systemd execution. For a TTS-only install, run `./scripts/install.sh --tts`.
 
 Canonical source for this unit: `systemd/templates/kokoro-tts.service.in`
 
